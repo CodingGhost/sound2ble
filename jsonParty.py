@@ -5,7 +5,7 @@ import logging
 import os
 from tkinter import Tk, filedialog
 from Ble2Led.ble_controller import BleController
-from Ble2Led.ble2led import Ble2Led
+from Ble2Led.ble2ledThreaded import Ble2Led
 from Ble2Led.b2l_single import b2lSingle
 import BeatDetection.BeatDetector as bd
 
@@ -27,6 +27,7 @@ class DMXBeatController:
         self.connected_devices = []  # Stores a list of b2lSingle instances
         self.lighting_steps = []
         self.current_step = 0
+        self.useBeat = True
 
     async def discover_devices(self):
         """Scans for available BLE DMX devices and connects to them."""
@@ -96,6 +97,7 @@ class DMXBeatController:
         print((self.current_step + 1))
         self.current_step = (self.current_step + 1) % len(self.lighting_steps)
 
+    
     async def run(self):
         """Main execution loop: Discover devices, load JSON, and wait for beats."""
         print("\n🔍 Discovering DMX devices...")
@@ -108,7 +110,7 @@ class DMXBeatController:
 
         print("\n🎵 Waiting for beats to trigger lighting changes...")
         loop = asyncio.get_running_loop()
-        detector = bd.BeatDetector(callback=self.on_beat_detected, loop=loop)
+        detector = bd.BeatDetector(callback=self.on_beat_detected, vuCallback=self.onVuUpdate, loop=loop)
         detector.run()
 
         try:
@@ -119,10 +121,50 @@ class DMXBeatController:
             bd.stop()
             await self.cleanup()
 
-    async def on_beat_detected(self):
+    def vu_to_led(self, vu_db):
+        """Convert VU level (dB) to an LED brightness value (0-255)."""
+        try:
+            min_db, max_db = -50, -10  # Ensure valid range
+            vu_db = max(min_db, min(max_db, vu_db))  # Clamp values
+            led_value = int(((vu_db - min_db) / (max_db - min_db)) * 255)
+            return led_value
+        except Exception as e:
+            print(f"Error in vu_to_led: {e}")
+            return 0  # Return default value on failure
+
+
+
+    # async def onVuUpdate(self, vu):
+    #     """Triggered on each VU update - can be used for debugging."""
+    #     try:
+    #         val = self.vu_to_led(vu)  # Potentially problematic line
+    #         print("test")  # Should be printed if function works
+    #     except Exception as e:
+    #         print(f"Error in vu_to_led: {e}")  # Catch exceptions
+
+    async def onVuUpdate(self, vu):
+        """Triggered on each VU update - can be used for debugging."""
+        val = self.vu_to_led(vu)
+        #print(f"🔊 VU: {val}")
+        #device.setRGB(255, 255, 255)
+        #device.setStrobe(device_data["s"])
+        if not self.useBeat:
+            for device in self.connected_devices:
+                print("set dimmer to " + str(val))
+                device.setRGB(255, 180, 100)
+                device.setDim(val)
+                
+
+
+    async def on_beat_detected(self, isBeat):
         """Triggered on each beat - applies the next lighting step."""
-        print(f"🎶 Beat detected! Applying step {self.current_step + 1}/{len(self.lighting_steps)}")
-        await self.apply_lighting_step()
+        if(isBeat):
+            self.useBeat = True
+            print(f"🎶 Beat detected! Applying step {self.current_step + 1}/{len(self.lighting_steps)}")
+            await self.apply_lighting_step()
+        else:
+            self.useBeat = False
+            print("Lichtorgel")
 
     async def cleanup(self):
         """Disconnect all BLE devices before exiting."""

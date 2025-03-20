@@ -22,7 +22,7 @@ log_madmom = logging.getLogger("MadmomProcessor")
 log_classification = logging.getLogger("BeatClassification")
 
 class BeatDetector:
-    def __init__(self, callback=None, loop=None):
+    def __init__(self, callback=None, vuCallback=None, loop=None):
         """
         Initializes the Beat Detector with Madmom and Librosa-based processing.
         :param callback: Function to be called when a beat is detected.
@@ -51,13 +51,14 @@ class BeatDetector:
 
         self.onset_history = []
         self.audio_queue = queue.Queue()
-        self.callback = callback
+        self.Beatcallback = callback
+        self.VuCallback = vuCallback
         self.running = False
         self.classification_state = "beats"
         self.stable_frames = 0
         self.last_update_time = time.time()
         self.avgOnset = 0
-
+        self.vu_level = 0.0
         # Initialize Madmom processors
         self.in_processor = RNNBeatProcessor(**self.kwargs)
         self.beat_processor = DBNBeatTrackingProcessor(**self.kwargs)
@@ -82,15 +83,41 @@ class BeatDetector:
         """Callback function when a beat is detected by Madmom."""
         if len(beats) > 0:
             log_madmom.info(f"Detected Beats: {beats} (Onset Strength: {self.avgOnset:.2f})")
-            if self.classification_state == "beats" and self.callback:
+            if self.classification_state == "beats" and self.Beatcallback:
                 if self.loop:
-                    asyncio.run_coroutine_threadsafe(self.callback(), self.loop)  # Send event to asyncio
+                    asyncio.run_coroutine_threadsafe(self.Beatcallback(True), self.loop)  # Send event to asyncio
                 else:
-                    self.callback()
+                    self.Beatcallback(True)
+            elif self.Beatcallback:
+                if self.loop:
+                    asyncio.run_coroutine_threadsafe(self.Beatcallback(False), self.loop)  # Send event to asyncio
+                else:
+                    self.Beatcallback(False)
 
         if not self.running:
             log_madmom.warning("Beat detection stopped unexpectedly.")
             exit()
+
+    def get_vu_level(self,audio_buffer, sr, hop_length):
+        """Compute the current VU level with smoothing and dB conversion."""
+        VU_ATTACK = 1  # Fast increase (0.1 = quick response)
+        VU_RELEASE = 1  # Slow decay (0.05 = smooth fade-out)
+
+        # Compute RMS
+        frame_length = 4 * hop_length  # Adjust dynamically
+        rms = librosa.feature.rms(y=audio_buffer, frame_length=frame_length, hop_length=hop_length)[0]
+        current_rms = rms[-1]  # Latest RMS value
+
+        # Convert to dB (avoid log(0) issues)
+        vu_db = 20 * np.log10(current_rms + 1e-6)  # dB conversion
+
+        # Apply attack/release smoothing
+        if vu_db > self.vu_level:
+            self.vu_level += VU_ATTACK * (vu_db - self.vu_level)  # Attack (fast rise)
+        else:
+            self.vu_level += VU_RELEASE * (vu_db - self.vu_level)  # Release (slow decay)
+
+        return self.vu_level  # Return smoothed VU level in dB
 
     def process_audio(self):
         """Processes the audio data in a separate thread for classification."""
@@ -106,7 +133,12 @@ class BeatDetector:
                     # Compute onset strength
                     onset_env = librosa.onset.onset_strength(y=audio_buffer, sr=self.sampleRate, hop_length=self.hop_length)
                     peaks = librosa.util.peak_pick(onset_env, pre_max=10, post_max=10, pre_avg=5, post_avg=5, delta=0.7, wait=10)
-                        
+                    current_vu = self.get_vu_level(audio_buffer, self.sampleRate, self.hop_length)
+                    if self.loop:
+                        asyncio.run_coroutine_threadsafe(self.VuCallback(current_vu), self.loop)  # Send event to asyncio
+                    else:
+                        self.VuCallback(current_vu)
+
                     if len(peaks) > 0:
                         self.avgOnset = onset_env[peaks].mean()
                         self.onset_history.append(self.avgOnset)
@@ -170,7 +202,7 @@ class BeatDetector:
 if __name__ == "__main__":
     import sys
 
-    def beat_callback():
+    def beat_callback(state):
         log_general.info("🔴 Beat detected!")
 
     detector = BeatDetector(callback=beat_callback)
