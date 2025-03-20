@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from ble_device import BLEDevice
+from .ble_device import BLEDevice
 
 log = logging.getLogger("Ble2Led")
 

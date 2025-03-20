@@ -1,7 +1,7 @@
 import asyncio
-from ble_controller import BleController
-from ble2led import Ble2Led
-from b2l_single import b2lSingle
+from Ble2Led.ble_controller import BleController
+from Ble2Led.ble2led import Ble2Led
+from Ble2Led.b2l_single import b2lSingle
 import logging
 
 logging.getLogger("Ble2Led").setLevel(logging.DEBUG)

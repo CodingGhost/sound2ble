@@ -2,7 +2,7 @@ import asyncio
 import sys
 import logging
 from bleak import BleakClient, BleakScanner
-import BeatDetector as bd
+import BeatDetection.BeatDetector as bd
 
 # Workaround for Windows BLE async bug
 sys.coinit_flags = 0  # 0 means MTA

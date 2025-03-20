@@ -1,5 +1,5 @@
-from ble2led import Ble2Led
-from led_interface import LEDInterface
+from .ble2led import Ble2Led
+from .led_interface import LEDInterface
 
 class b2lSingle(LEDInterface):
     """Represents a single LED channel (CH1 or CH2) of a Ble2Led device."""
@@ -34,6 +34,12 @@ class b2lSingle(LEDInterface):
 
     def getDim(self):
         return self.ble2led.getDmx(self.channel_offset + 3)
+    
+    def setStrobe(self, value):
+        self.ble2led.updateDmx(self.channel_offset + 4, value)
+
+    def getSTrobe(self):
+        return self.ble2led.getDmx(self.channel_offset + 4)
 
     def setRGB(self, r, g, b):
         self.setR(r)

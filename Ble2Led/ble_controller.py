@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from bleak import BleakScanner
-from ble2led import Ble2Led
+from .ble2led import Ble2Led
 
 # Logging
 logging.basicConfig(level=logging.INFO)
